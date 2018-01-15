@@ -49,7 +49,7 @@ options:
         or configuration template to load.  The path to the source file can
         either be the full path on the Ansible control host or a relative
         path from the playbook or role root directory.  This argument is mutually
-        exclusive with I(lines).
+        exclusive with I(lines), I(parents).
     required: false
     default: null
   before:
@@ -201,7 +201,6 @@ from ansible.module_utils.network.common.config import NetworkConfig, dumps
 from ansible.module_utils._text import to_native
 
 
-
 def get_candidate(module):
     candidate = NetworkConfig(indent=1)
     if module.params['src']:
@@ -210,6 +209,7 @@ def get_candidate(module):
         parents = module.params['parents'] or list()
         candidate.add(module.params['lines'], parents=parents)
     return candidate
+
 
 def run(module, result):
     match = module.params['match']
@@ -251,6 +251,7 @@ def run(module, result):
             run_commands(module, 'write mem')
         result['changed'] = True
 
+
 def main():
     """ main entry point for module execution
     """
@@ -276,7 +277,9 @@ def main():
 
     argument_spec.update(asa_argument_spec)
 
-    mutually_exclusive = [('lines', 'src'), ('defaults', 'passwords')]
+    mutually_exclusive = [('lines', 'src'),
+                          ('parents', 'src'),
+                          ('defaults', 'passwords')]
 
     required_if = [('match', 'strict', ['lines']),
                    ('match', 'exact', ['lines']),
@@ -292,7 +295,6 @@ def main():
     check_args(module)
 
     config = None
-
 
     if module.params['backup']:
         result['__backup__'] = get_config(module)

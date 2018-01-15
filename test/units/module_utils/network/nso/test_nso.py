@@ -28,6 +28,7 @@ from ansible.module_utils.network.nso import nso
 MODULE_PREFIX_MAP = '''
 {
   "ansible-nso": "an",
+  "test": "test",
   "tailf-ncs": "ncs"
 }
 '''
@@ -148,6 +149,67 @@ SCHEMA_DATA = {
     ]
   }
 }
+''',
+    '/test:test': '''
+{
+    "meta": {},
+    "data": {
+        "kind": "list",
+        "name":"test",
+        "qname":"test:test",
+        "key":["name"],
+        "children": [
+            {
+                "kind": "key",
+                "name": "name",
+                "qname": "test:name",
+                "type": {"name":"string","primitive":true}
+            },
+            {
+                "kind": "choice",
+                "name": "test-choice",
+                "qname": "test:test-choice",
+                "cases": [
+                    {
+                        "kind": "case",
+                        "name": "direct-child-case",
+                        "qname":"test:direct-child-case",
+                        "children":[
+                            {
+                                "kind": "leaf",
+                                "name": "direct-child",
+                                "qname": "test:direct-child",
+                                "type": {"name":"string","primitive":true}
+                            }
+                        ]
+                    },
+                    {
+                        "kind":"case","name":"nested-child-case","qname":"test:nested-child-case",
+                        "children": [
+                            {
+                                "kind": "choice",
+                                "name": "nested-choice",
+                                "qname": "test:nested-choice",
+                                "cases": [
+                                    {
+                                        "kind":"case","name":"nested-child","qname":"test:nested-child",
+                                        "children": [
+                                            {
+                                               "kind": "leaf",
+                                               "name":"nested-child",
+                                                "qname":"test:nested-child",
+                                               "type":{"name":"string","primitive":true}}
+                                         ]
+                                    }
+                             ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+}
 '''
 }
 
@@ -243,3 +305,53 @@ class TestValueBuilder(unittest.TestCase):
         self.assertEquals('1', value.value)
 
         self.assertEqual(0, len(calls))
+
+    @patch('ansible.module_utils.network.nso.nso.open_url')
+    def test_nested_choice(self, open_url_mock):
+        calls = [
+            MockResponse('new_trans', {}, 200, '{"result": {"th": 1}}'),
+            get_schema_response('/test:test'),
+            MockResponse('exists', {'path': '/test:test{direct}'}, 200, '{"result": {"exists": true}}'),
+            MockResponse('exists', {'path': '/test:test{nested}'}, 200, '{"result": {"exists": true}}')
+        ]
+        open_url_mock.side_effect = lambda *args, **kwargs: mock_call(calls, *args, **kwargs)
+
+        parent = "/test:test"
+        schema_data = json.loads(
+            SCHEMA_DATA['/test:test'])
+        schema = schema_data['data']
+
+        vb = nso.ValueBuilder(nso.JsonRpc('http://localhost:8080/jsonrpc'))
+        vb.build(parent, None, [{'name': 'direct', 'direct-child': 'direct-value'},
+                                {'name': 'nested', 'nested-child': 'nested-value'}], schema)
+        self.assertEquals(2, len(vb.values))
+        value = vb.values[0]
+        self.assertEquals('{0}{{direct}}/direct-child'.format(parent), value.path)
+        self.assertEquals('set', value.state)
+        self.assertEquals('direct-value', value.value)
+
+        value = vb.values[1]
+        self.assertEquals('{0}{{nested}}/nested-child'.format(parent), value.path)
+        self.assertEquals('set', value.state)
+        self.assertEquals('nested-value', value.value)
+
+        self.assertEqual(0, len(calls))
+
+
+class TestVerifyVersion(unittest.TestCase):
+    def test_valid_versions(self):
+        self.assertTrue(nso.verify_version_str('5.0', [(4, 6), (4, 5, 1)]))
+        self.assertTrue(nso.verify_version_str('5.1.1', [(4, 6), (4, 5, 1)]))
+        self.assertTrue(nso.verify_version_str('5.1.1.2', [(4, 6), (4, 5, 1)]))
+        self.assertTrue(nso.verify_version_str('4.6', [(4, 6), (4, 5, 1)]))
+        self.assertTrue(nso.verify_version_str('4.6.2', [(4, 6), (4, 5, 1)]))
+        self.assertTrue(nso.verify_version_str('4.6.2.1', [(4, 6), (4, 5, 1)]))
+        self.assertTrue(nso.verify_version_str('4.5.1', [(4, 6), (4, 5, 1)]))
+        self.assertTrue(nso.verify_version_str('4.5.2', [(4, 6), (4, 5, 1)]))
+        self.assertTrue(nso.verify_version_str('4.5.1.2', [(4, 6), (4, 5, 1)]))
+
+    def test_invalid_versions(self):
+        self.assertFalse(nso.verify_version_str('4.4', [(4, 6), (4, 5, 1)]))
+        self.assertFalse(nso.verify_version_str('4.4.1', [(4, 6), (4, 5, 1)]))
+        self.assertFalse(nso.verify_version_str('4.4.1.2', [(4, 6), (4, 5, 1)]))
+        self.assertFalse(nso.verify_version_str('4.5.0', [(4, 6), (4, 5, 1)]))

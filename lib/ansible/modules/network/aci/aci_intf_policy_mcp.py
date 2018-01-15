@@ -17,14 +17,10 @@ short_description: Manage MCP interface policies on Cisco ACI fabrics (mcp:IfPol
 description:
 - Manage MCP interface policies on Cisco ACI fabrics.
 - More information from the internal APIC class
-  I(mcp:IfPol) at U(https://developer.cisco.com/media/mim-ref/MO-mcpIfPol.html).
+  I(mcp:IfPol) at U(https://developer.cisco.com/docs/apic-mim-ref/).
 author:
-- Swetha Chunduri (@schunduri)
 - Dag Wieers (@dagwieers)
-- Jacob McGill (@jmcgill298)
 version_added: '2.4'
-requirements:
-- ACI Fabric 1.0(3f)+
 options:
   mcp:
     description:
@@ -96,8 +92,8 @@ def main():
     aci.construct_url(
         root_class=dict(
             aci_class='mcpIfPol',
-            aci_rn='infra/mcpIfP-{}'.format(mcp),
-            filter_target='(mcpIfPol.name, "{}")'.format(mcp),
+            aci_rn='infra/mcpIfP-{0}'.format(mcp),
+            filter_target='eq(mcpIfPol.name, "{0}")'.format(mcp),
             module_object=mcp,
         ),
     )

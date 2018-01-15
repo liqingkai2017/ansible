@@ -7,3 +7,8 @@
 - name: Ensure netconf is enabled
   junos_netconf:
     state: present
+  connection: network_cli
+
+- name: wait for netconf server to come up
+  pause:
+    seconds: 10

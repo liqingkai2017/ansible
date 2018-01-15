@@ -383,7 +383,7 @@ def network_init(args, internal_targets):
         platform, version = platform_version.split('/', 1)
         platform_target = 'network/%s/' % platform
 
-        if platform_target not in platform_targets and 'network/basics/' not in platform_targets:
+        if platform_target not in platform_targets:
             display.warning('Skipping "%s" because selected tests do not target the "%s" platform.' % (
                 platform_version, platform))
             continue
@@ -406,7 +406,7 @@ def network_start(args, platform, version):
     :type version: str
     :rtype: AnsibleCoreCI
     """
-    core_ci = AnsibleCoreCI(args, platform, version, stage=args.remote_stage)
+    core_ci = AnsibleCoreCI(args, platform, version, stage=args.remote_stage, provider=args.remote_provider)
     core_ci.start()
 
     return core_ci.save()
@@ -420,7 +420,7 @@ def network_run(args, platform, version, config):
     :type config: dict[str, str]
     :rtype: AnsibleCoreCI
     """
-    core_ci = AnsibleCoreCI(args, platform, version, stage=args.remote_stage, load=False)
+    core_ci = AnsibleCoreCI(args, platform, version, stage=args.remote_stage, provider=args.remote_provider, load=False)
     core_ci.load(config)
     core_ci.wait()
 
@@ -436,6 +436,7 @@ def network_inventory(remotes):
     :rtype: str
     """
     groups = dict([(remote.platform, []) for remote in remotes])
+    net = []
 
     for remote in remotes:
         options = dict(
@@ -452,6 +453,10 @@ def network_inventory(remotes):
                 ' '.join('%s="%s"' % (k, options[k]) for k in sorted(options)),
             )
         )
+
+        net.append(remote.platform)
+
+    groups['net:children'] = net
 
     template = ''
 
@@ -548,7 +553,7 @@ def windows_start(args, version):
     :type version: str
     :rtype: AnsibleCoreCI
     """
-    core_ci = AnsibleCoreCI(args, 'windows', version, stage=args.remote_stage)
+    core_ci = AnsibleCoreCI(args, 'windows', version, stage=args.remote_stage, provider=args.remote_provider)
     core_ci.start()
 
     return core_ci.save()
@@ -561,7 +566,7 @@ def windows_run(args, version, config):
     :type config: dict[str, str]
     :rtype: AnsibleCoreCI
     """
-    core_ci = AnsibleCoreCI(args, 'windows', version, stage=args.remote_stage, load=False)
+    core_ci = AnsibleCoreCI(args, 'windows', version, stage=args.remote_stage, provider=args.remote_provider, load=False)
     core_ci.load(config)
     core_ci.wait()
 

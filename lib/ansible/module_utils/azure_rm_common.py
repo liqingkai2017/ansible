@@ -70,6 +70,7 @@ AZURE_COMMON_REQUIRED_IF = [
 
 ANSIBLE_USER_AGENT = 'Ansible/{0}'.format(ANSIBLE_VERSION)
 CLOUDSHELL_USER_AGENT_KEY = 'AZURE_HTTP_USER_AGENT'
+VSCODEEXT_USER_AGENT_KEY = 'VSCODEEXT_USER_AGENT'
 
 CIDR_PATTERN = re.compile(r"(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1"
                           r"[0-9]{2}|2[0-4][0-9]|25[0-5])(/([0-9]|[1-2][0-9]|3[0-2]))")
@@ -110,9 +111,8 @@ except ImportError as exc:
 try:
     from enum import Enum
     from msrestazure.azure_exceptions import CloudError
+    from msrestazure.tools import resource_id, is_valid_resource_id
     from msrestazure import azure_cloud
-    from azure.mgmt.network.models import PublicIPAddress, NetworkSecurityGroup, SecurityRule, NetworkInterface, \
-        NetworkInterfaceIPConfiguration, Subnet
     from azure.common.credentials import ServicePrincipalCredentials, UserPassCredentials
     from azure.mgmt.network.version import VERSION as network_client_version
     from azure.mgmt.storage.version import VERSION as storage_client_version
@@ -150,6 +150,13 @@ def azure_id_to_dict(id):
         index += 1
     return result
 
+
+def format_resource_id(val, subscription_id, namespace, types, resource_group):
+    return resource_id(name=val,
+                       resource_group=resource_group,
+                       namespace=namespace,
+                       type=types,
+                       subscription=subscription_id) if not is_valid_resource_id(val) else val
 
 AZURE_PKG_VERSIONS = {
     StorageManagementClient.__name__: {
@@ -190,7 +197,7 @@ AZURE_MIN_RELEASE = '2.0.0'
 
 class AzureRMModuleBase(object):
     def __init__(self, derived_arg_spec, bypass_checks=False, no_log=False,
-                 check_invalid_arguments=True, mutually_exclusive=None, required_together=None,
+                 check_invalid_arguments=None, mutually_exclusive=None, required_together=None,
                  required_one_of=None, add_file_common_args=False, supports_check_mode=False,
                  required_if=None, supports_tags=True, facts_module=False, skip_exec=False):
 
@@ -629,7 +636,7 @@ class AzureRMModuleBase(object):
             self.check_provisioning_state(pip)
             return pip
 
-        params = PublicIPAddress(
+        params = self.network_models.PublicIPAddress(
             location=location,
             public_ip_allocation_method=allocation_method,
         )
@@ -669,7 +676,7 @@ class AzureRMModuleBase(object):
             self.check_provisioning_state(group)
             return group
 
-        parameters = NetworkSecurityGroup()
+        parameters = self.network_models.NetworkSecurityGroup()
         parameters.location = location
 
         if not open_ports:
@@ -677,17 +684,17 @@ class AzureRMModuleBase(object):
             if os_type == 'Linux':
                 # add an inbound SSH rule
                 parameters.security_rules = [
-                    SecurityRule('Tcp', '*', '*', 'Allow', 'Inbound', description='Allow SSH Access',
-                                 source_port_range='*', destination_port_range='22', priority=100, name='SSH')
+                    self.network_models.SecurityRule('Tcp', '*', '*', 'Allow', 'Inbound', description='Allow SSH Access',
+                                                     source_port_range='*', destination_port_range='22', priority=100, name='SSH')
                 ]
                 parameters.location = location
             else:
                 # for windows add inbound RDP and WinRM rules
                 parameters.security_rules = [
-                    SecurityRule('Tcp', '*', '*', 'Allow', 'Inbound', description='Allow RDP port 3389',
-                                 source_port_range='*', destination_port_range='3389', priority=100, name='RDP01'),
-                    SecurityRule('Tcp', '*', '*', 'Allow', 'Inbound', description='Allow WinRM HTTPS port 5986',
-                                 source_port_range='*', destination_port_range='5986', priority=101, name='WinRM01'),
+                    self.network_models.SecurityRule('Tcp', '*', '*', 'Allow', 'Inbound', description='Allow RDP port 3389',
+                                                     source_port_range='*', destination_port_range='3389', priority=100, name='RDP01'),
+                    self.network_models.SecurityRule('Tcp', '*', '*', 'Allow', 'Inbound', description='Allow WinRM HTTPS port 5986',
+                                                     source_port_range='*', destination_port_range='5986', priority=101, name='WinRM01'),
                 ]
         else:
             # Open custom ports
@@ -697,8 +704,8 @@ class AzureRMModuleBase(object):
                 priority += 1
                 rule_name = "Rule_{0}".format(priority)
                 parameters.security_rules.append(
-                    SecurityRule('Tcp', '*', '*', 'Allow', 'Inbound', source_port_range='*',
-                                 destination_port_range=str(port), priority=priority, name=rule_name)
+                    self.network_models.SecurityRule('Tcp', '*', '*', 'Allow', 'Inbound', source_port_range='*',
+                                                     destination_port_range=str(port), priority=priority, name=rule_name)
                 )
 
         self.log('Creating default security group {0}'.format(security_group_name))
@@ -729,6 +736,9 @@ class AzureRMModuleBase(object):
         # Add user agent when running from Cloud Shell
         if CLOUDSHELL_USER_AGENT_KEY in os.environ:
             client.config.add_user_agent(os.environ[CLOUDSHELL_USER_AGENT_KEY])
+        # Add user agent when running from VSCode extension
+        if VSCODEEXT_USER_AGENT_KEY in os.environ:
+            client.config.add_user_agent(os.environ[VSCODEEXT_USER_AGENT_KEY])
 
         return client
 
@@ -738,8 +748,13 @@ class AzureRMModuleBase(object):
         if not self._storage_client:
             self._storage_client = self.get_mgmt_svc_client(StorageManagementClient,
                                                             base_url=self._cloud_environment.endpoints.resource_manager,
-                                                            api_version='2017-06-01')
+                                                            api_version='2017-10-01')
         return self._storage_client
+
+    @property
+    def storage_models(self):
+        self.log('Getting storage models...')
+        return StorageManagementClient.models("2017-10-01")
 
     @property
     def network_client(self):
@@ -751,6 +766,11 @@ class AzureRMModuleBase(object):
         return self._network_client
 
     @property
+    def network_models(self):
+        self.log("Getting network models...")
+        return NetworkManagementClient.models("2017-06-01")
+
+    @property
     def rm_client(self):
         self.log('Getting resource manager client')
         if not self._resource_client:
@@ -760,6 +780,11 @@ class AzureRMModuleBase(object):
         return self._resource_client
 
     @property
+    def rm_models(self):
+        self.log("Getting resource manager models")
+        return ResourceManagementClient.models("2017-05-10")
+
+    @property
     def compute_client(self):
         self.log('Getting compute client')
         if not self._compute_client:
@@ -767,6 +792,11 @@ class AzureRMModuleBase(object):
                                                             base_url=self._cloud_environment.endpoints.resource_manager,
                                                             api_version='2017-03-30')
         return self._compute_client
+
+    @property
+    def compute_models(self):
+        self.log("Getting compute models")
+        return ComputeManagementClient.models("2017-03-30")
 
     @property
     def dns_client(self):

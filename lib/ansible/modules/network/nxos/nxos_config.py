@@ -300,9 +300,9 @@ def get_candidate(module):
 def execute_show_commands(module, commands, output='text'):
     cmds = []
     for command in to_list(commands):
-        cmd = { 'command': command,
-                'output': output,
-              }
+        cmd = {'command': command,
+               'output': output,
+               }
         cmds.append(cmd)
     body = run_commands(module, cmds)
     return body
@@ -344,6 +344,7 @@ def main():
     argument_spec.update(nxos_argument_spec)
 
     mutually_exclusive = [('lines', 'src'),
+                          ('parents', 'src'),
                           ('save', 'save_when')]
 
     required_if = [('match', 'strict', ['lines']),
@@ -459,7 +460,6 @@ def main():
                     'changed': True,
                     'diff': {'before': str(base_config), 'after': str(running_config)}
                 })
-
 
     module.exit_json(**result)
 

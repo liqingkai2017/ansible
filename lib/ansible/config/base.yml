@@ -56,6 +56,15 @@ ANSIBLE_NOCOWS:
   - {key: nocows, section: defaults}
   type: boolean
   yaml: {key: display.i_am_no_fun}
+ANSIBLE_COW_PATH:
+  name: Set path to cowsay command
+  default: null
+  description: Specify a custom cowsay path or swap in your cowsay implementation of choice
+  env: [{name: ANSIBLE_COW_PATH}]
+  ini:
+  - {key: cowpath, section: defaults}
+  type: string
+  yaml: {key: display.cowpath}
 ANSIBLE_PIPELINING:
   name: Connection pipelining
   default: False
@@ -150,6 +159,17 @@ BECOME_ALLOW_SAME_USER:
   - {key: become_allow_same_user, section: privilege_escalation}
   type: boolean
   yaml: {key: privilege_escalation.become_allow_same_user}
+AGNOSTIC_BECOME_PROMPT:
+  # TODO: Switch the default to True in either the Ansible 2.6 release or the 2.7 release, whichever happens after the Tower 3.3 release
+  name: Display an agnostic become prompt
+  default: False
+  type: boolean
+  description: Display an agnostic become prompt instead of displaying a prompt containing the command line supplied become method
+  env: [{name: ANSIBLE_AGNOSTIC_BECOME_PROMPT}]
+  ini:
+    - {key: agnostic_become_prompt, section: privilege_escalation}
+  yaml: {key: privilege_escalation.agnostic_become_prompt}
+  version_added: "2.5"
 CACHE_PLUGIN:
   name: Persistent Cache plugin
   default: memory
@@ -279,6 +299,17 @@ COLOR_WARN:
   env: [{name: ANSIBLE_COLOR_WARN}]
   ini:
   - {key: warn, section: colors}
+ACTION_WARNINGS:
+  name: Toggle action warnings
+  default: True
+  description:
+    - By default Ansible will issue a warning when recieved from a task action (module or action plugin)
+    - These warnings can be silenced by adjusting this setting to False.
+  env: [{name: ANSIBLE_ACTION_WARNINGS}]
+  ini:
+  - {key: action_warnings, section: defaults}
+  type: boolean
+  version_added: "2.5"
 COMMAND_WARNINGS:
   name: Command module warnings
   default: True
@@ -766,7 +797,7 @@ DEFAULT_NO_LOG:
 DEFAULT_NO_TARGET_SYSLOG:
   name: No syslog on target
   default: False
-  description: Toggle Ansbile logging to syslog on the target when it executes tasks.
+  description: Toggle Ansible logging to syslog on the target when it executes tasks.
   env: [{name: ANSIBLE_NO_TARGET_SYSLOG}]
   ini:
   - {key: no_target_syslog, section: defaults}
@@ -912,6 +943,18 @@ DEFAULT_STDOUT_CALLBACK:
   env: [{name: ANSIBLE_STDOUT_CALLBACK}]
   ini:
   - {key: stdout_callback, section: defaults}
+ENABLE_TASK_DEBUGGER:
+  name: Whether to enable the task debugger
+  default: False
+  description:
+    - Whether or not to enable the task debugger, this previously was done as a strategy plugin.
+    - Now all strategy plugins can inherit this behavior. The debugger defaults to activating when
+    - a task is failed on unreachable. Use the debugger keyword for more flexibility.
+  type: boolean
+  env: [{name: ANSIBLE_ENABLE_TASK_DEBUGGER}]
+  ini:
+    - {key: enable_task_debugger, section: defaults}
+  version_added: "2.5"
 DEFAULT_STRATEGY:
   name: Implied strategy
   default: 'linear'
@@ -1293,7 +1336,7 @@ MERGE_MULTIPLE_CLI_TAGS:
   version_added: "2.3"
 NETWORK_GROUP_MODULES:
   name: Network module families
-  default: [eos, nxos, ios, iosxr, junos, enos, ce, vyos, sros, dellos9, dellos10, dellos6, asa, aruba, aireos, bigip, ironware, mlnxos]
+  default: [eos, nxos, ios, iosxr, junos, enos, ce, vyos, sros, dellos9, dellos10, dellos6, asa, aruba, aireos, bigip, ironware, onyx]
   description: 'TODO: write it'
   env: [{name: NETWORK_GROUP_MODULES}]
   ini:

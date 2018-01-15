@@ -25,6 +25,7 @@ from abc import ABCMeta, abstractmethod
 from functools import wraps
 
 from ansible.errors import AnsibleError, AnsibleConnectionFailure
+from ansible.module_utils._text import to_bytes, to_text
 from ansible.module_utils.six import with_metaclass
 
 try:
@@ -44,8 +45,8 @@ except ImportError:
 def enable_mode(func):
     @wraps(func)
     def wrapped(self, *args, **kwargs):
-        prompt = self.get_prompt()
-        if not str(prompt).strip().endswith('#'):
+        prompt = self._connection.get_prompt()
+        if not to_text(prompt, errors='surrogate_or_strict').strip().endswith('#'):
             raise AnsibleError('operation requires privilege escalation')
         return func(self, *args, **kwargs)
     return wrapped
@@ -99,16 +100,14 @@ class CliconfBase(with_metaclass(ABCMeta, object)):
         the results to the caller.  The command output will be returned as a
         string
         """
-        if not signal.getsignal(signal.SIGALRM):
-            signal.signal(signal.SIGALRM, self._alarm_handler)
-        signal.alarm(self._connection._play_context.timeout)
-        resp = self._connection.send(command, prompt, answer, sendonly)
-        signal.alarm(0)
-        return resp
+        kwargs = {'command': to_bytes(command), 'sendonly': sendonly}
+        if prompt is not None:
+            kwargs['prompt'] = to_bytes(prompt)
+        if answer is not None:
+            kwargs['answer'] = to_bytes(answer)
 
-    def get_prompt(self):
-        """Returns the current prompt from the device"""
-        return self._connection._matched_prompt
+        resp = self._connection.send(**kwargs)
+        return resp
 
     def get_base_rpc(self):
         """Returns list of base rpc method supported by remote device"""

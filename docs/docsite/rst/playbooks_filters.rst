@@ -116,6 +116,19 @@ To get the maximum value from a list of numbers::
 
     {{ [3, 4, 2] | max }}
 
+.. versionadded:: 2.5
+
+Flatten a list (same thing the `flatten` lookup does)::
+
+    {{ [3, [4, 2] ]|flatten }}
+
+Flatten only the first level of a list (akin to the `items` lookup)::
+
+    {{ [3, [4, [2]] ]|flatten(level=1) }}
+
+
+To get the minimum value from list of numbers::
+
 .. _set_theory_filters:
 
 Set Theory Filters
@@ -437,7 +450,7 @@ The ``parse_xml`` filter will load the spec file and pass the command output
 through formatted as JSON.
 
 The spec file should be valid formatted YAML. It defines how to parse the XML
-output and return JSON data.  
+output and return JSON data.
 
 Below is an example of a valid spec file that
 will parse the output from the ``show vlan | display xml`` command.::
@@ -492,7 +505,7 @@ value using the same ``show vlan | display xml`` command.::
 
 The value of ``top`` is the XPath relative to the XML root node.
 In the example XML output given below, the value of ``top`` is ``configuration/vlans/vlan``,
-which is an XPath expression relative to the root node (<rpc-reply>). 
+which is an XPath expression relative to the root node (<rpc-reply>).
 ``configuration`` in the value of ``top`` is the outer most container node, and ``vlan``
 is the inner-most container node.
 
@@ -548,7 +561,7 @@ To get a sha512 password hash (random salt)::
 To get a sha256 password hash with a specific salt::
 
     {{ 'secretpassword'|password_hash('sha256', 'mysecretsalt') }}
-    
+
 An idempotent method to generate unique hashes per system is to use a salt that is consistent between runs::
 
     {{ 'secretpassword'|password_hash('sha512', 65534|random(seed=inventory_hostname)|string) }}
@@ -652,6 +665,17 @@ Similar way can be applied style for C (``//...``), C block
     {{ "C block style" | comment('cblock') }}
     {{ "Erlang style" | comment('erlang') }}
     {{ "XML style" | comment('xml') }}
+
+If you need a specific comment character that is not included by any of the
+above, you can customize it with::
+
+  {{ "My Special Case" | comment(decoration="! ") }}
+
+producing::
+
+  !
+  ! My Special Case
+  !
 
 It is also possible to fully customize the comment style::
 

@@ -51,7 +51,7 @@ options:
         or configuration template to load.  The path to the source file can
         either be the full path on the Ansible control host or a relative
         path from the playbook or role root directory.  This argument is mutually
-        exclusive with I(lines).
+        exclusive with I(lines), I(parents).
     required: false
     default: null
     version_added: "2.2"
@@ -180,9 +180,8 @@ backup_path:
   sample: /playbooks/ansible/backup/iosxr01.2016-07-16@22:28:34
 """
 from ansible.module_utils.basic import AnsibleModule
-from ansible.module_utils.network.iosxr.iosxr import load_config,get_config
+from ansible.module_utils.network.iosxr.iosxr import load_config, get_config
 from ansible.module_utils.network.iosxr.iosxr import iosxr_argument_spec
-from ansible.module_utils.network.iosxr.iosxr import check_args as iosxr_check_args
 from ansible.module_utils.network.common.config import NetworkConfig, dumps
 
 
@@ -190,7 +189,6 @@ DEFAULT_COMMIT_COMMENT = 'configured by iosxr_config'
 
 
 def check_args(module, warnings):
-    iosxr_check_args(module, warnings)
     if module.params['comment']:
         if len(module.params['comment']) > 60:
             module.fail_json(msg='comment argument cannot be more than 60 characters')
@@ -216,6 +214,7 @@ def get_candidate(module):
         candidate.add(module.params['lines'], parents=parents)
     return candidate
 
+
 def run(module, result):
     match = module.params['match']
     replace = module.params['replace']
@@ -231,7 +230,7 @@ def run(module, result):
         contents = get_running_config(module)
         configobj = NetworkConfig(contents=contents, indent=1)
         commands = candidate.difference(configobj, path=path, match=match,
-                                          replace=replace)
+                                        replace=replace)
     else:
         commands = candidate.items
 
@@ -247,11 +246,13 @@ def run(module, result):
 
             result['commands'] = commands
 
-        diff = load_config(module, commands, result['warnings'],
-                           not check_mode, replace_config, comment, admin)
+        commit = not check_mode
+        diff = load_config(module, commands, commit=commit, replace=replace_config,
+                           comment=comment, admin=admin)
         if diff:
             result['diff'] = dict(prepared=diff)
-            result['changed'] = True
+        result['changed'] = True
+
 
 def main():
     """main entry point for module execution
@@ -280,7 +281,8 @@ def main():
 
     argument_spec.update(iosxr_argument_spec)
 
-    mutually_exclusive = [('lines', 'src')]
+    mutually_exclusive = [('lines', 'src'),
+                          ('parents', 'src')]
 
     required_if = [('match', 'strict', ['lines']),
                    ('match', 'exact', ['lines']),

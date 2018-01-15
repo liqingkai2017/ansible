@@ -37,11 +37,11 @@ notes:
 options:
   banner:
     description:
-      - Specifies which banner that should be
-        configured on the remote device.
+      - Specifies which banner should be configured on the remote device.
+        In Ansible 2.4 and earlier only I(login) and I(motd) were supported.
     required: true
     default: null
-    choices: ['login', 'motd']
+    choices: ['login', 'motd', 'exec', 'incoming', 'slip-ppp']
   text:
     description:
       - The banner text that should be
@@ -96,6 +96,7 @@ from ansible.module_utils.network.ios.ios import load_config, run_commands
 from ansible.module_utils.network.ios.ios import ios_argument_spec, check_args
 import re
 
+
 def map_obj_to_commands(updates, module):
     commands = list()
     want, have = updates
@@ -113,6 +114,7 @@ def map_obj_to_commands(updates, module):
             commands.append(banner_cmd)
 
     return commands
+
 
 def map_config_to_obj(module):
     rc, out, err = exec_command(module, 'show banner %s' % module.params['banner'])
@@ -132,6 +134,7 @@ def map_config_to_obj(module):
         obj['state'] = 'present'
     return obj
 
+
 def map_params_to_obj(module):
     text = module.params['text']
     if text:
@@ -143,11 +146,12 @@ def map_params_to_obj(module):
         'state': module.params['state']
     }
 
+
 def main():
     """ main entry point for module execution
     """
     argument_spec = dict(
-        banner=dict(required=True, choices=['login', 'motd']),
+        banner=dict(required=True, choices=['login', 'motd', 'exec', 'incoming', 'slip-ppp']),
         text=dict(),
         state=dict(default='present', choices=['present', 'absent'])
     )

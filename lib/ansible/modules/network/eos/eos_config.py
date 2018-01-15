@@ -336,6 +336,7 @@ def main():
     argument_spec.update(eos_argument_spec)
 
     mutually_exclusive = [('lines', 'src'),
+                          ('parents', 'src'),
                           ('save', 'save_when')]
 
     required_if = [('match', 'strict', ['lines']),
@@ -402,7 +403,6 @@ def main():
                 result['session'] = response['session']
 
             result['changed'] = True
-
 
     running_config = None
     startup_config = None

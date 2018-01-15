@@ -52,7 +52,7 @@ options:
         or configuration template to load.  The path to the source file can
         either be the full path on the Ansible control host or a relative
         path from the playbook or role root directory.  This argument is
-        mutually exclusive with I(lines).
+        mutually exclusive with I(lines), I(parents).
     required: false
     default: null
   before:
@@ -166,18 +166,11 @@ backup_path:
 from ansible.module_utils.basic import AnsibleModule
 from ansible.module_utils.network.enos.enos import load_config, get_config
 from ansible.module_utils.network.enos.enos import enos_argument_spec
-from ansible.module_utils.network.enos.enos import check_args as enos_check_args
+from ansible.module_utils.network.enos.enos import check_args
 from ansible.module_utils.network.common.config import NetworkConfig, dumps
 
 
 DEFAULT_COMMIT_COMMENT = 'configured by enos_config'
-
-
-def check_args(module, warnings):
-    enos_check_args(module, warnings)
-    if module.params['comment']:
-        if len(module.params['comment']) > 60:
-            module.fail_json(msg='comment argument cannot be more than 60 characters')
 
 
 def get_running_config(module):
@@ -190,7 +183,10 @@ def get_running_config(module):
 def get_candidate(module):
     candidate = NetworkConfig(indent=1)
     if module.params['src']:
-        candidate.load(module.params['src'])
+        try:
+            candidate.loadfp(module.params['src'])
+        except IOError:
+            candidate.load(module.params['src'])
     elif module.params['lines']:
         parents = module.params['parents'] or list()
         candidate.add(module.params['lines'], parents=parents)
@@ -228,8 +224,7 @@ def run(module, result):
 
             result['commands'] = commands
 
-        diff = load_config(module, commands, result['warnings'],
-                           not check_mode, replace_config, comment, admin)
+        diff = load_config(module, commands)
         if diff:
             result['diff'] = dict(prepared=diff)
             result['changed'] = True
@@ -258,7 +253,8 @@ def main():
 
     argument_spec.update(enos_argument_spec)
 
-    mutually_exclusive = [('lines', 'src')]
+    mutually_exclusive = [('lines', 'src'),
+                          ('parents', 'src')]
 
     required_if = [('match', 'strict', ['lines']),
                    ('match', 'exact', ['lines']),

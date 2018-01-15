@@ -25,6 +25,13 @@ from ansible.module_utils.urls import open_url
 import json
 import re
 
+try:
+    unicode
+    HAVE_UNICODE = True
+except NameError:
+    unicode = str
+    HAVE_UNICODE = False
+
 
 nso_argument_spec = dict(
     url=dict(required=True),
@@ -151,6 +158,28 @@ class JsonRpc(object):
         }
         resp, resp_json = self._write_call(payload)
         return resp_json['result']
+
+    def show_config(self, path, operational=False):
+        payload = {
+            'method': 'show_config',
+            'params': {
+                'path': path,
+                'result_as': 'json',
+                'with_oper': operational}
+        }
+        resp, resp_json = self._read_call(payload)
+        return resp_json['result']
+
+    def query(self, xpath, fields):
+        payload = {
+            'method': 'query',
+            'params': {
+                'xpath_expr': xpath,
+                'selection': fields
+            }
+        }
+        resp, resp_json = self._read_call(payload)
+        return resp_json['result']['results']
 
     def run_action(self, th, path, params=None):
         if params is None:
@@ -407,7 +436,7 @@ class ValueBuilder(object):
         parent_schema = all_schema['data']
         meta = all_schema['meta']
 
-        schema = self._get_child(parent_schema, key)
+        schema = self._find_child(parent_path, parent_schema, key)
         if self._is_leaf(schema):
             path_type = schema['type']
             if path_type.get('primitive', False):
@@ -443,11 +472,20 @@ class ValueBuilder(object):
     def _get_choice_child(self, schema, qname):
         name_key = ':' in qname and 'qname' or 'name'
         for child_case in schema['cases']:
+            # look for direct child
             choice_child_schema = next(
                 (c for c in child_case['children']
                  if c.get(name_key, None) == qname), None)
             if choice_child_schema is not None:
                 return choice_child_schema
+
+            # look for nested choice
+            for child_schema in child_case['children']:
+                if child_schema['kind'] != 'choice':
+                    continue
+                choice_child_schema = self._get_choice_child(child_schema, qname)
+                if choice_child_schema is not None:
+                    return choice_child_schema
         return None
 
     def _is_leaf(self, schema):
@@ -465,13 +503,100 @@ def connect(params):
     return client
 
 
-def verify_version(client):
+def verify_version(client, required_versions=None):
+    if required_versions is None:
+        required_versions = [(4, 5), (4, 4, 3)]
+
     version_str = client.get_system_setting('version')
+    if not verify_version_str(version_str, required_versions):
+        supported_versions = ', '.join(
+            ['.'.join([str(p) for p in required_version])
+             for required_version in required_versions])
+        raise ModuleFailException(
+            'unsupported NSO version {0}. {1} or later supported'.format(
+                version_str, supported_versions))
+
+
+def verify_version_str(version_str, required_versions):
     version = [int(p) for p in version_str.split('.')]
     if len(version) < 2:
         raise ModuleFailException(
             'unsupported NSO version format {0}'.format(version_str))
-    if (version[0] < 4 or version[1] < 4 or
-            (version[1] == 4 and (len(version) < 3 or version[2] < 3))):
-        raise ModuleFailException(
-            'unsupported NSO version {0}, only 4.4.3 or later is supported'.format(version_str))
+
+    def check_version(required_version, version):
+        for pos in range(len(required_version)):
+            if pos >= len(version):
+                return False
+            if version[pos] > required_version[pos]:
+                return True
+            if version[pos] < required_version[pos]:
+                return False
+        return True
+
+    for required_version in required_versions:
+        if check_version(required_version, version):
+            return True
+    return False
+
+
+def normalize_value(expected_value, value, key):
+    if value is None:
+        return None
+    if isinstance(expected_value, bool):
+        return value == 'true'
+    if isinstance(expected_value, int):
+        try:
+            return int(value)
+        except TypeError:
+            raise ModuleFailException(
+                'returned value {0} for {1} is not a valid integer'.format(
+                    key, value))
+    if isinstance(expected_value, float):
+        try:
+            return float(value)
+        except TypeError:
+            raise ModuleFailException(
+                'returned value {0} for {1} is not a valid float'.format(
+                    key, value))
+    if isinstance(expected_value, (list, tuple)):
+        if not isinstance(value, (list, tuple)):
+            raise ModuleFailException(
+                'returned value {0} for {1} is not a list'.format(value, key))
+        if len(expected_value) != len(value):
+            raise ModuleFailException(
+                'list length mismatch for {0}'.format(key))
+
+        normalized_value = []
+        for i in range(len(expected_value)):
+            normalized_value.append(
+                normalize_value(expected_value[i], value[i], '{0}[{1}]'.format(key, i)))
+        return normalized_value
+
+    if isinstance(expected_value, dict):
+        if not isinstance(value, dict):
+            raise ModuleFailException(
+                'returned value {0} for {1} is not a dict'.format(value, key))
+        if len(expected_value) != len(value):
+            raise ModuleFailException(
+                'dict length mismatch for {0}'.format(key))
+
+        normalized_value = {}
+        for k in expected_value.keys():
+            n_k = normalize_value(k, k, '{0}[{1}]'.format(key, k))
+            if n_k not in value:
+                raise ModuleFailException('missing {0} in value'.format(n_k))
+            normalized_value[n_k] = normalize_value(expected_value[k], value[k], '{0}[{1}]'.format(key, k))
+        return normalized_value
+
+    if HAVE_UNICODE:
+        if isinstance(expected_value, unicode) and isinstance(value, str):
+            return value.decode('utf-8')
+        if isinstance(expected_value, str) and isinstance(value, unicode):
+            return value.encode('utf-8')
+    else:
+        if hasattr(expected_value, 'encode') and hasattr(value, 'decode'):
+            return value.decode('utf-8')
+        if hasattr(expected_value, 'decode') and hasattr(value, 'encode'):
+            return value.encode('utf-8')
+
+    return value
