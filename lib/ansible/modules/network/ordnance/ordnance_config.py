@@ -24,7 +24,7 @@ description:
     an implementation for working with these configuration sections in
     a deterministic way.
 options:
-  commands:
+  lines:
     description:
       - The ordered set of commands that should be configured in the
         section.  The commands must be the exact same commands as found
@@ -36,7 +36,7 @@ options:
     aliases: ['commands']
   parents:
     description:
-      - The ordered set of parents that uniquely identify the section
+      - The ordered set of parents that uniquely identify the section or hierarchy
         the commands should be checked against.  If the parents argument
         is omitted, the commands are checked against the set of top
         level or global commands.

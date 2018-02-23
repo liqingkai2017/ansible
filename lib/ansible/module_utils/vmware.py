@@ -716,7 +716,7 @@ def find_host_by_cluster_datacenter(module, content, datacenter_name, cluster_na
     return None, cluster
 
 
-def set_vm_power_state(content, vm, state, force):
+def set_vm_power_state(content, vm, state, force, timeout=0):
     """
     Set the power status for a VM determined by the current and
     requested states. force is forceful
@@ -764,6 +764,8 @@ def set_vm_power_state(content, vm, state, force):
                     if vm.guest.toolsRunningStatus == 'guestToolsRunning':
                         if expected_state == 'shutdownguest':
                             task = vm.ShutdownGuest()
+                            if timeout > 0:
+                                result.update(wait_for_poweroff(vm, timeout))
                         else:
                             task = vm.RebootGuest()
                         # Set result['changed'] immediately because
@@ -799,8 +801,25 @@ def set_vm_power_state(content, vm, state, force):
     return result
 
 
+def wait_for_poweroff(vm, timeout=300):
+    result = dict()
+    interval = 15
+    while timeout > 0:
+        if vm.runtime.powerState.lower() == 'poweredoff':
+            break
+        time.sleep(interval)
+        timeout -= interval
+    else:
+        result['failed'] = True
+        result['msg'] = 'Timeout while waiting for VM power off.'
+    return result
+
+
 class PyVmomi(object):
     def __init__(self, module):
+        """
+        Constructor
+        """
         if not HAS_PYVMOMI:
             module.fail_json(msg='PyVmomi Python module required. Install using "pip install PyVmomi"')
 
@@ -828,41 +847,205 @@ class PyVmomi(object):
         elif api_type == 'HostAgent':
             return False
 
+    def get_managed_objects_properties(self, vim_type, properties=None):
+        """
+        Function to look up a Managed Object Reference in vCenter / ESXi Environment
+        :param vim_type: Type of vim object e.g, for datacenter - vim.Datacenter
+        :param properties: List of properties related to vim object e.g. Name
+        :return: local content object
+        """
+        # Get Root Folder
+        root_folder = self.content.rootFolder
+
+        if properties is None:
+            properties = ['name']
+
+        # Create Container View with default root folder
+        mor = self.content.viewManager.CreateContainerView(root_folder, [vim_type], True)
+
+        # Create Traversal spec
+        traversal_spec = vmodl.query.PropertyCollector.TraversalSpec(
+            name="traversal_spec",
+            path='view',
+            skip=False,
+            type=vim.view.ContainerView
+        )
+
+        # Create Property Spec
+        property_spec = vmodl.query.PropertyCollector.PropertySpec(
+            type=vim_type,  # Type of object to retrieved
+            all=False,
+            pathSet=properties
+        )
+
+        # Create Object Spec
+        object_spec = vmodl.query.PropertyCollector.ObjectSpec(
+            obj=mor,
+            skip=True,
+            selectSet=[traversal_spec]
+        )
+
+        # Create Filter Spec
+        filter_spec = vmodl.query.PropertyCollector.FilterSpec(
+            objectSet=[object_spec],
+            propSet=[property_spec],
+            reportMissingObjectsInResults=False
+        )
+
+        return self.content.propertyCollector.RetrieveContents([filter_spec])
+
     # Virtual Machine related functions
     def get_vm(self):
-        vm = None
-        match_first = (self.params['name_match'] == 'first')
+        """
+        Function to find unique virtual machine either by UUID or Name.
+        Returns: virtual machine object if found, else None.
+
+        """
+        vm_obj = None
+        user_desired_path = None
 
         if self.params['uuid']:
-            vm = find_vm_by_id(self.content, vm_id=self.params['uuid'], vm_id_type="uuid")
-        elif self.params['folder'] and self.params['name']:
-            vm = find_vm_by_id(self.content, vm_id=self.params['name'], vm_id_type="inventory_path",
-                               folder=self.params['folder'], match_first=match_first)
+            vm_obj = find_vm_by_id(self.content, vm_id=self.params['uuid'], vm_id_type="uuid")
 
-        if vm:
-            self.current_vm_obj = vm
+        elif self.params['name']:
+            objects = self.get_managed_objects_properties(vim_type=vim.VirtualMachine, properties=['name'])
+            vms = []
 
-        return vm
+            for temp_vm_object in objects:
+                if len(temp_vm_object.propSet) != 1:
+                    continue
+                for temp_vm_object_property in temp_vm_object.propSet:
+                    if temp_vm_object_property.val == self.params['name']:
+                        vms.append(temp_vm_object.obj)
+                        break
+
+            # get_managed_objects_properties may return multiple virtual machine,
+            # following code tries to find user desired one depending upon the folder specified.
+            if len(vms) > 1:
+                # We have found multiple virtual machines, decide depending upon folder value
+                if self.params['folder'] is None:
+                    self.module.fail_json(msg="Multiple virtual machines with same name [%s] found, "
+                                              "Folder value is a required parameter to find uniqueness "
+                                              "of the virtual machine" % self.params['name'],
+                                          details="Please see documentation of the vmware_guest module "
+                                                  "for folder parameter.")
+
+                # Get folder path where virtual machine is located
+                # User provided folder where user thinks virtual machine is present
+                user_folder = self.params['folder']
+                # User defined datacenter
+                user_defined_dc = self.params['datacenter']
+                # User defined datacenter's object
+                datacenter_obj = find_datacenter_by_name(self.content, self.params['datacenter'])
+                # Get Path for Datacenter
+                dcpath = compile_folder_path_for_object(vobj=datacenter_obj)
+
+                # Nested folder does not return trailing /
+                if not dcpath.endswith('/'):
+                    dcpath += '/'
+
+                if user_folder in [None, '', '/']:
+                    # User provided blank value or
+                    # User provided only root value, we fail
+                    self.module.fail_json(msg="vmware_guest found multiple virtual machines with same "
+                                              "name [%s], please specify folder path other than blank "
+                                              "or '/'" % self.params['name'])
+                elif user_folder.startswith('/vm/'):
+                    # User provided nested folder under VMware default vm folder i.e. folder = /vm/india/finance
+                    user_desired_path = "%s%s%s" % (dcpath, user_defined_dc, user_folder)
+                else:
+                    # User defined datacenter is not nested i.e. dcpath = '/' , or
+                    # User defined datacenter is nested i.e. dcpath = '/F0/DC0' or
+                    # User provided folder starts with / and datacenter i.e. folder = /ha-datacenter/ or
+                    # User defined folder starts with datacenter without '/' i.e.
+                    # folder = DC0/vm/india/finance or
+                    # folder = DC0/vm
+                    user_desired_path = user_folder
+
+                for vm in vms:
+                    # Check if user has provided same path as virtual machine
+                    actual_vm_folder_path = self.get_vm_path(content=self.content, vm_name=vm)
+                    if not actual_vm_folder_path.startswith("%s%s" % (dcpath, user_defined_dc)):
+                        continue
+                    if user_desired_path in actual_vm_folder_path:
+                        vm_obj = vm
+                        break
+            elif vms:
+                # Unique virtual machine found.
+                vm_obj = vms[0]
+
+        if vm_obj:
+            self.current_vm_obj = vm_obj
+
+        return vm_obj
 
     def gather_facts(self, vm):
+        """
+        Function to gather facts of virtual machine.
+        Args:
+            vm: Name of virtual machine.
+
+        Returns: Facts dictionary of the given virtual machine.
+
+        """
         return gather_vm_facts(self.content, vm)
 
     @staticmethod
-    def get_vm_path(content, vm):
-        foldername = None
-        folder = vm.parent
+    def get_vm_path(content, vm_name):
+        """
+        Function to find the path of virtual machine.
+        Args:
+            content: VMware content object
+            vm_name: virtual machine managed object
+
+        Returns: Folder of virtual machine if exists, else None
+
+        """
+        folder_name = None
+        folder = vm_name.parent
         if folder:
-            foldername = folder.name
+            folder_name = folder.name
             fp = folder.parent
             # climb back up the tree to find our path, stop before the root folder
             while fp is not None and fp.name is not None and fp != content.rootFolder:
-                foldername = fp.name + '/' + foldername
+                folder_name = fp.name + '/' + folder_name
                 try:
                     fp = fp.parent
                 except:
                     break
-            foldername = '/' + foldername
-        return foldername
+            folder_name = '/' + folder_name
+        return folder_name
+
+    def get_vm_or_template(self, template_name=None):
+        """
+        Function to find the virtual machine or virtual machine template using name
+        used for cloning purpose.
+        Args:
+            template_name: Name of virtual machine or virtual machine template
+
+        Returns: virtual machine or virtual machine template object
+
+        """
+        template_obj = None
+
+        if template_name:
+            objects = self.get_managed_objects_properties(vim_type=vim.VirtualMachine, properties=['name'])
+            templates = []
+
+            for temp_vm_object in objects:
+                if len(temp_vm_object.propSet) != 1:
+                    continue
+                for temp_vm_object_property in temp_vm_object.propSet:
+                    if temp_vm_object_property.val == template_name:
+                        templates.append(temp_vm_object.obj)
+                        break
+
+            if len(templates) > 1:
+                # We have found multiple virtual machine templates
+                self.module.fail_json(msg="Multiple virtual machines or templates with same name [%s] found." % template_name)
+            elif templates:
+                template_obj = templates[0]
+        return template_obj
 
     # Cluster related functions
     def find_cluster_by_name(self, cluster_name, datacenter_name=None):
@@ -920,3 +1103,46 @@ class PyVmomi(object):
             if portgroup.spec.name == portgroup_name:
                 return portgroup
         return False
+
+    def get_all_port_groups_by_host(self, host_system):
+        """
+        Function to get all Port Group by host
+        Args:
+            host_system: Name of Host System
+
+        Returns: List of Port Group Spec
+        """
+        pgs_list = []
+        for pg in host_system.config.network.portgroup:
+            pgs_list.append(pg)
+        return pgs_list
+
+    def get_all_host_objs(self, cluster_name=None, esxi_host_name=None):
+        """
+        Function to get all host system managed object
+
+        Args:
+            cluster_name: Name of Cluster
+            esxi_host_name: Name of ESXi server
+
+        Returns: A list of all host system managed objects, else empty list
+
+        """
+        host_obj_list = []
+        if not self.is_vcenter():
+            host_obj_list.append(get_all_objs(self.content, [vim.HostSystem])[0])
+        else:
+            if cluster_name:
+                cluster_obj = self.find_cluster_by_name(cluster_name=cluster_name)
+                if cluster_obj:
+                    host_obj_list = [host for host in cluster_obj.host]
+                else:
+                    self.module.fail_json(changed=False, msg="Cluster '%s' not found" % cluster_name)
+            elif esxi_host_name:
+                esxi_host_obj = self.find_hostsystem_by_name(host_name=esxi_host_name)
+                if esxi_host_obj:
+                    host_obj_list = [esxi_host_obj]
+                else:
+                    self.module.fail_json(changed=False, msg="ESXi '%s' not found" % esxi_host_name)
+
+        return host_obj_list

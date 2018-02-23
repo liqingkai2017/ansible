@@ -38,6 +38,12 @@ options:
         description:
             - Name of the virtual machine.
         required: true
+    custom_data:
+        description:
+            - Data which is made available to the virtual machine and used by e.g., cloud-init.
+        default: null
+        required: false
+        version_added: "2.5"
     state:
         description:
             - Assert the state of the virtual machine.
@@ -591,6 +597,7 @@ azure_vm:
     }
 '''  # NOQA
 
+import base64
 import random
 import re
 
@@ -601,6 +608,7 @@ except ImportError:
     # This is handled in azure_rm_common
     pass
 
+from ansible.module_utils.basic import to_native, to_bytes
 from ansible.module_utils.azure_rm_common import AzureRMModuleBase, azure_id_to_dict
 
 
@@ -626,6 +634,7 @@ class AzureRMVirtualMachine(AzureRMModuleBase):
         self.module_arg_spec = dict(
             resource_group=dict(type='str', required=True),
             name=dict(type='str', required=True),
+            custom_data=dict(type='str'),
             state=dict(choices=['present', 'absent'], default='present', type='str'),
             location=dict(type='str'),
             short_hostname=dict(type='str'),
@@ -660,6 +669,7 @@ class AzureRMVirtualMachine(AzureRMModuleBase):
 
         self.resource_group = None
         self.name = None
+        self.custom_data = None
         self.state = None
         self.location = None
         self.short_hostname = None
@@ -970,6 +980,10 @@ class AzureRMVirtualMachine(AzureRMModuleBase):
                     if self.admin_password:
                         vm_resource.os_profile.admin_password = self.admin_password
 
+                    if self.custom_data:
+                        # Azure SDK (erroneously?) wants native string type for this
+                        vm_resource.os_profile.custom_data = to_native(base64.b64encode(to_bytes(self.custom_data)))
+
                     if self.os_type == 'Linux':
                         vm_resource.os_profile.linux_configuration = self.compute_models.LinuxConfiguration(
                             disable_password_authentication=disable_ssh_password
@@ -1100,6 +1114,12 @@ class AzureRMVirtualMachine(AzureRMModuleBase):
 
                     if vm_dict.get('tags'):
                         vm_resource.tags = vm_dict['tags']
+
+                    # Add custom_data, if provided
+                    if vm_dict['properties']['osProfile'].get('customData'):
+                        custom_data = vm_dict['properties']['osProfile']['customData']
+                        # Azure SDK (erroneously?) wants native string type for this
+                        vm_resource.os_profile.custom_data = to_native(base64.b64encode(to_bytes(custom_data)))
 
                     # Add admin password, if one provided
                     if vm_dict['properties']['osProfile'].get('adminPassword'):
@@ -1585,11 +1605,11 @@ class AzureRMVirtualMachine(AzureRMModuleBase):
             # Find a virtual network
             no_vnets_msg = "Error: unable to find virtual network in resource group {0}. A virtual network " \
                            "with at least one subnet must exist in order to create a NIC for the virtual " \
-                           "machine.".format(self.resource_group)
+                           "machine.".format(virtual_network_resource_group)
 
             virtual_network_name = None
             try:
-                vnets = self.network_client.virtual_networks.list(self.resource_group)
+                vnets = self.network_client.virtual_networks.list(virtual_network_resource_group)
             except CloudError:
                 self.log('cloud error!')
                 self.fail(no_vnets_msg)
@@ -1604,7 +1624,7 @@ class AzureRMVirtualMachine(AzureRMModuleBase):
 
         if self.subnet_name:
             try:
-                subnet = self.network_client.subnets.get(self.resource_group, virtual_network_name, self.subnet_name)
+                subnet = self.network_client.subnets.get(virtual_network_resource_group, virtual_network_name, self.subnet_name)
                 subnet_id = subnet.id
             except Exception as exc:
                 self.fail("Error: fetching subnet {0} - {1}".format(self.subnet_name, str(exc)))
@@ -1628,10 +1648,10 @@ class AzureRMVirtualMachine(AzureRMModuleBase):
                 self.fail(no_subnets_msg)
 
         self.results['actions'].append('Created default public IP {0}'.format(self.name + '01'))
-        pip = self.create_default_pip(self.resource_group, self.location, self.name, self.public_ip_allocation_method)
+        pip = self.create_default_pip(self.resource_group, self.location, self.name + '01', self.public_ip_allocation_method)
 
         self.results['actions'].append('Created default security group {0}'.format(self.name + '01'))
-        group = self.create_default_securitygroup(self.resource_group, self.location, self.name, self.os_type,
+        group = self.create_default_securitygroup(self.resource_group, self.location, self.name + '01', self.os_type,
                                                   self.open_ports)
 
         parameters = self.network_models.NetworkInterface(
@@ -1666,6 +1686,7 @@ class AzureRMVirtualMachine(AzureRMModuleBase):
 
 def main():
     AzureRMVirtualMachine()
+
 
 if __name__ == '__main__':
     main()

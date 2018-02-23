@@ -12,12 +12,13 @@
 # CLEAN ENVIRONMENT
 - name: Remove any pre-existing certificate
   aci_aaa_user_certificate: &cert_absent
-    hostname: '{{ aci_hostname }}'
+    host: '{{ aci_hostname }}'
     username: '{{ aci_username }}'
     password: '{{ aci_password }}'
-    use_proxy: no
-    validate_certs: no
-    user: admin
+    validate_certs: '{{ aci_validate_certs | default(false) }}'
+    use_ssl: '{{ aci_use_ssl | default(true) }}'
+    use_proxy: '{{ aci_use_proxy | default(true) }}'
+    aaa_user: admin
     certificate_name: admin
     state: absent
 
@@ -25,12 +26,13 @@
 # ADD USER CERTIFICATE
 - name: Add user certificate (check_mode)
   aci_aaa_user_certificate: &cert_present
-    hostname: '{{ aci_hostname }}'
+    host: '{{ aci_hostname }}'
     username: '{{ aci_username }}'
     password: '{{ aci_password }}'
-    use_proxy: no
-    validate_certs: no
-    user: admin
+    validate_certs: '{{ aci_validate_certs | default(false) }}'
+    use_ssl: '{{ aci_use_ssl | default(true) }}'
+    use_proxy: '{{ aci_use_proxy | default(true) }}'
+    aaa_user: admin
     certificate_name: admin
     certificate: "{{ lookup('file', 'pki/admin.crt') }}"
     state: present
@@ -60,13 +62,14 @@
 # QUERY ALL USER CERTIFICATES
 - name: Query all user certificates using signature-based authentication (check_mode)
   aci_aaa_user_certificate: &cert_query
-    hostname: '{{ aci_hostname }}'
+    host: '{{ aci_hostname }}'
     username: '{{ aci_username }}'
     #password: '{{ aci_password }}'
     private_key: '{{ role_path }}/pki/admin.key'
-    use_proxy: no
-    validate_certs: no
-    user: admin
+    validate_certs: '{{ aci_validate_certs | default(false) }}'
+    use_ssl: '{{ aci_use_ssl | default(true) }}'
+    use_proxy: '{{ aci_use_proxy | default(true) }}'
+    aaa_user: admin
     state: query
   check_mode: yes
   register: cm_query_all_certs

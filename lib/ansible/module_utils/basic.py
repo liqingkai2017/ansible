@@ -37,9 +37,26 @@ FILE_ATTRIBUTES = {
     'Z': 'compresseddirty',
 }
 
-# ansible modules can be written in any language.  To simplify
-# development of Python modules, the functions available here can
-# be used to do many common tasks
+PASS_VARS = {
+    'check_mode': 'check_mode',
+    'debug': '_debug',
+    'diff': '_diff',
+    'module_name': '_name',
+    'no_log': 'no_log',
+    'selinux_special_fs': '_selinux_special_fs',
+    'shell_executable': '_shell',
+    'socket': '_socket_path',
+    'syslog_facility': '_syslog_facility',
+    'tmpdir': 'tmpdir',
+    'verbosity': '_verbosity',
+    'version': 'ansible_version',
+}
+
+PASS_BOOLS = ('no_log', 'debug', 'diff')
+
+# Ansible modules can be written in any language.
+# The functions available here can be used to do many common tasks,
+# to simplify development of Python modules.
 
 import locale
 import os
@@ -90,7 +107,7 @@ NoneType = type(None)
 try:
     from collections.abc import KeysView
     SEQUENCETYPE = (Sequence, frozenset, KeysView)
-except:
+except ImportError:
     SEQUENCETYPE = (Sequence, frozenset)
 
 try:
@@ -153,7 +170,7 @@ from ansible.module_utils.six import (
 )
 from ansible.module_utils.six.moves import map, reduce, shlex_quote
 from ansible.module_utils._text import to_native, to_bytes, to_text
-from ansible.module_utils.parsing.convert_bool import BOOLEANS, BOOLEANS_FALSE, BOOLEANS_TRUE, boolean
+from ansible.module_utils.parsing.convert_bool import BOOLEANS_FALSE, BOOLEANS_TRUE, boolean
 
 
 PASSWORD_MATCH = re.compile(r'^(?:.+[-_\s])?pass(?:[-_\s]?(?:word|phrase|wrd|wd)?)(?:[-_\s].+)?$', re.I)
@@ -826,9 +843,7 @@ class AnsibleModule(object):
         self._clean = {}
 
         self.aliases = {}
-        self._legal_inputs = ['_ansible_check_mode', '_ansible_no_log', '_ansible_debug', '_ansible_diff', '_ansible_verbosity',
-                              '_ansible_selinux_special_fs', '_ansible_module_name', '_ansible_version', '_ansible_syslog_facility',
-                              '_ansible_socket', '_ansible_shell_executable']
+        self._legal_inputs = ['_ansible_%s' % k for k in PASS_VARS]
         self._options_context = list()
 
         if add_file_common_args:
@@ -1634,44 +1649,17 @@ class AnsibleModule(object):
 
         for (k, v) in list(param.items()):
 
-            if k == '_ansible_check_mode' and v:
-                self.check_mode = True
-
-            elif k == '_ansible_no_log':
-                self.no_log = self.boolean(v)
-
-            elif k == '_ansible_debug':
-                self._debug = self.boolean(v)
-
-            elif k == '_ansible_diff':
-                self._diff = self.boolean(v)
-
-            elif k == '_ansible_verbosity':
-                self._verbosity = v
-
-            elif k == '_ansible_selinux_special_fs':
-                self._selinux_special_fs = v
-
-            elif k == '_ansible_syslog_facility':
-                self._syslog_facility = v
-
-            elif k == '_ansible_version':
-                self.ansible_version = v
-
-            elif k == '_ansible_module_name':
-                self._name = v
-
-            elif k == '_ansible_socket':
-                self._socket_path = v
-
-            elif k == '_ansible_shell_executable' and v:
-                self._shell = v
-
-            elif check_invalid_arguments and k not in legal_inputs:
+            if check_invalid_arguments and k not in legal_inputs:
                 unsupported_parameters.add(k)
+            elif k.startswith('_ansible_'):
+                # handle setting internal properties from internal ansible vars
+                key = k.replace('_ansible_', '')
+                if key in PASS_BOOLS:
+                    setattr(self, PASS_VARS[key], self.boolean(v))
+                else:
+                    setattr(self, PASS_VARS[key], v)
 
-            # clean up internal params:
-            if k.startswith('_ansible_'):
+                # clean up internal params:
                 del self.params[k]
 
         if unsupported_parameters:
@@ -1790,7 +1778,16 @@ class AnsibleModule(object):
                 continue
             if isinstance(choices, SEQUENCETYPE) and not isinstance(choices, (binary_type, text_type)):
                 if k in param:
-                    if param[k] not in choices:
+                    # Allow one or more when type='list' param with choices
+                    if isinstance(param[k], list):
+                        diff_list = ", ".join([item for item in param[k] if item not in choices])
+                        if diff_list:
+                            choices_str = ", ".join([to_native(c) for c in choices])
+                            msg = "value of %s must be one or more of: %s. Got no match for: %s" % (k, choices_str, diff_list)
+                            if self._options_context:
+                                msg += " found in %s" % " -> ".join(self._options_context)
+                            self.fail_json(msg=msg)
+                    elif param[k] not in choices:
                         # PyYaml converts certain strings to bools.  If we can unambiguously convert back, do so before checking
                         # the value.  If we can't figure this out, module author is responsible.
                         lowered_choices = None
@@ -2202,7 +2199,7 @@ class AnsibleModule(object):
         except:
             # we don't have access to the cwd, probably because of sudo.
             # Try and move to a neutral location to prevent errors
-            for cwd in [os.path.expandvars('$HOME'), tempfile.gettempdir()]:
+            for cwd in [self.tmpdir, os.path.expandvars('$HOME'), tempfile.gettempdir()]:
                 try:
                     if os.access(cwd, os.F_OK | os.R_OK):
                         os.chdir(cwd)
@@ -2514,7 +2511,7 @@ class AnsibleModule(object):
                     # would end in something like:
                     #     file = _os.path.join(dir, pre + name + suf)
                     # TypeError: can't concat bytes to str
-                    error_msg = ('Failed creating temp file for atomic move.  This usually happens when using Python3 less than Python3.5. '
+                    error_msg = ('Failed creating tmp file for atomic move.  This usually happens when using Python3 less than Python3.5. '
                                  'Please use Python2.x or Python3.5 or greater.')
                 finally:
                     if error_msg:
@@ -2534,7 +2531,7 @@ class AnsibleModule(object):
                             try:
                                 shutil.move(b_src, b_tmp_dest_name)
                             except OSError:
-                                # cleanup will happen by 'rm' of tempdir
+                                # cleanup will happen by 'rm' of tmpdir
                                 # copy2 will preserve some metadata
                                 shutil.copy2(b_src, b_tmp_dest_name)
 

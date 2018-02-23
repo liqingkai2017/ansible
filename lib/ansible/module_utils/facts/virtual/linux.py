@@ -97,7 +97,7 @@ class LinuxVirtual(Virtual):
             virtual_facts['virtualization_role'] = 'guest'
             return virtual_facts
 
-        if product_name == 'OpenStack Nova':
+        if product_name in ['OpenStack Compute', 'OpenStack Nova']:
             virtual_facts['virtualization_type'] = 'openstack'
             virtual_facts['virtualization_role'] = 'guest'
             return virtual_facts
@@ -111,6 +111,11 @@ class LinuxVirtual(Virtual):
 
         if bios_vendor == 'innotek GmbH':
             virtual_facts['virtualization_type'] = 'virtualbox'
+            virtual_facts['virtualization_role'] = 'guest'
+            return virtual_facts
+
+        if bios_vendor == 'Amazon EC2':
+            virtual_facts['virtualization_type'] = 'kvm'
             virtual_facts['virtualization_role'] = 'guest'
             return virtual_facts
 
@@ -142,11 +147,16 @@ class LinuxVirtual(Virtual):
             virtual_facts['virtualization_role'] = 'guest'
             return virtual_facts
 
+        if sys_vendor == 'Amazon EC2':
+            virtual_facts['virtualization_type'] = 'kvm'
+            virtual_facts['virtualization_role'] = 'guest'
+            return virtual_facts
+
         if os.path.exists('/proc/self/status'):
             for line in get_file_lines('/proc/self/status'):
-                if re.match(r'^VxID: \d+', line):
+                if re.match(r'^VxID:\s+\d+', line):
                     virtual_facts['virtualization_type'] = 'linux_vserver'
-                    if re.match(r'^VxID: 0', line):
+                    if re.match(r'^VxID:\s+0', line):
                         virtual_facts['virtualization_role'] = 'host'
                     else:
                         virtual_facts['virtualization_role'] = 'guest'
@@ -160,6 +170,8 @@ class LinuxVirtual(Virtual):
                     virtual_facts['virtualization_type'] = 'uml'
                 elif re.match('^model name.*UML', line):
                     virtual_facts['virtualization_type'] = 'uml'
+                elif re.match('^machine.*CHRP IBM pSeries .emulated by qemu.', line):
+                    virtual_facts['virtualization_type'] = 'kvm'
                 elif re.match('^vendor_id.*PowerVM Lx86', line):
                     virtual_facts['virtualization_type'] = 'powervm_lx86'
                 elif re.match('^vendor_id.*IBM/S390', line):
@@ -200,14 +212,15 @@ class LinuxVirtual(Virtual):
                             if open(f).read().rstrip() == 'vdsm':
                                 virtual_facts['virtualization_type'] = 'RHEV'
                                 break
-                        except:
+                        except Exception:
                             pass
                     else:
                         virtual_facts['virtualization_type'] = 'kvm'
 
                 else:
                     virtual_facts['virtualization_type'] = 'kvm'
-                virtual_facts['virtualization_role'] = 'host'
+                    virtual_facts['virtualization_role'] = 'host'
+
                 return virtual_facts
 
             if 'vboxdrv' in modules:

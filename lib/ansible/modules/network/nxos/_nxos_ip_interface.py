@@ -24,7 +24,10 @@ DOCUMENTATION = '''
 ---
 module: nxos_ip_interface
 version_added: "2.1"
-deprecated: Deprecated in 2.5. Use M(nxos_l3_interface) instead.
+deprecated:
+  removed_in: "2.9"
+  why: Replaced with common C(*_l3_interface) network modules.
+  alternative: Use M(nxos_l3_interface) instead.
 short_description: Manages L3 attributes for IPv4 and IPv6 interfaces.
 description:
     - Manages Layer 3 attributes for IPv4 and IPv6 interfaces.
@@ -50,6 +53,12 @@ options:
             - IPv4 or IPv6 Address.
         required: false
         default: null
+    version:
+        description:
+            - Version of IP address. If the IP address is IPV4 version should be v4.
+              If the IP address is IPV6 version should be v6.
+        default: v4
+        choices: ['v4', 'v6']
     mask:
         description:
             - Subnet mask for IPv4 or IPv6 Address in decimal format.
@@ -527,10 +536,7 @@ def main():
         state=dict(required=False, default='present',
                    choices=['present', 'absent']),
         allow_secondary=dict(required=False, default=False,
-                             type='bool'),
-        include_defaults=dict(default=True),
-        config=dict(),
-        save=dict(type='bool', default=False)
+                             type='bool')
     )
 
     argument_spec.update(nxos_argument_spec)

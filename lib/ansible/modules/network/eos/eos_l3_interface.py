@@ -20,7 +20,7 @@ author: "Ganesh Nalawade (@ganeshrn)"
 short_description: Manage L3 interfaces on Arista EOS network devices.
 description:
   - This module provides declarative management of L3 interfaces
-    on Arist EOS network devices.
+    on Arista EOS network devices.
 notes:
   - Tested against EOS 4.15
 options:
@@ -48,6 +48,7 @@ options:
         be present or absent on remote device.
     default: present
     choices: ['present', 'absent']
+extends_documentation_fragment: eos
 """
 
 EXAMPLES = """

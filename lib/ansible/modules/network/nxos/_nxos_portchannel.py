@@ -25,7 +25,10 @@ DOCUMENTATION = '''
 module: nxos_portchannel
 extends_documentation_fragment: nxos
 version_added: "2.2"
-deprecated: Deprecated in 2.5. Use M(nxos_linkagg) instead.
+deprecated:
+  removed_in: "2.9"
+  why: Replaced with common C(*_linkagg) network modules.
+  alternative: Use M(nxos_linkagg) instead.
 short_description: Manages port-channel interfaces.
 description:
   - Manages port-channel specific configuration parameters.
@@ -439,9 +442,6 @@ def main():
         members=dict(required=False, default=None, type='list'),
         force=dict(required=False, default='false', type='str', choices=['true', 'false']),
         state=dict(required=False, choices=['absent', 'present'], default='present'),
-        include_defaults=dict(default=False),
-        config=dict(),
-        save=dict(type='bool', default=False)
     )
 
     argument_spec.update(nxos_argument_spec)

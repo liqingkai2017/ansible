@@ -43,6 +43,9 @@ options:
   state:
     description:
       - Whether to install (C(present) or C(installed), C(latest)), or remove (C(absent) or C(removed)) a package.
+      - C(present) and C(installed) will simply ensure that a desired package is installed.
+      - C(latest) will update the specified package if it's not of the latest available version.
+      - C(absent) and C(removed) will remove the specified package.
     choices: [ absent, installed, latest, present, removed ]
     default: present
   enablerepo:
@@ -313,7 +316,7 @@ def ensure_yum_utils(module):
 def fetch_rpm_from_url(spec, module=None):
     # download package so that we can query it
     package_name, _ = os.path.splitext(str(spec.rsplit('/', 1)[1]))
-    package_file = tempfile.NamedTemporaryFile(prefix=package_name, suffix='.rpm', delete=False)
+    package_file = tempfile.NamedTemporaryFile(dir=getattr(module, 'tmpdir', None), prefix=package_name, suffix='.rpm', delete=False)
     module.add_cleanup_file(package_file.name)
     try:
         rsp, info = fetch_url(module, spec)

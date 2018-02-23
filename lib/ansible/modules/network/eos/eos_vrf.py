@@ -45,8 +45,10 @@ options:
       - Route distinguisher of the VRF
   interfaces:
     description:
-      - List of interfaces to check the VRF has been
-        configured correctly.
+      - Identifies the set of interfaces that
+        should be configured in the VRF. Interfaces must be routed
+        interfaces in order to be placed into a VRF. The name of interface
+        should be in expanded format and not abbreviated.
   aggregate:
     description: List of VRFs definitions
   purge:
@@ -63,6 +65,7 @@ options:
       - State of the VRF configuration.
     default: present
     choices: ['present', 'absent']
+extends_documentation_fragment: eos
 """
 
 EXAMPLES = """
@@ -181,29 +184,44 @@ def map_obj_to_commands(updates, module):
 def map_config_to_obj(module):
     objs = []
     output = run_commands(module, ['show vrf'])
-    lines = output[0].strip().splitlines()[2:]
 
-    for l in lines:
-        if not l:
+    lines = output[0].strip().splitlines()[3:]
+
+    out_len = len(lines)
+    index = 0
+    while out_len > index:
+        line = lines[index]
+        if not line:
             continue
 
-        splitted_line = re.split(r'\s{2,}', l.strip())
+        splitted_line = re.split(r'\s{2,}', line.strip())
 
         if len(splitted_line) == 1:
+            index += 1
             continue
         else:
-            obj = {}
+            obj = dict()
             obj['name'] = splitted_line[0]
             obj['rd'] = splitted_line[1]
-            obj['interfaces'] = None
+            obj['interfaces'] = []
 
             if len(splitted_line) > 4:
                 obj['interfaces'] = []
+                interfaces = splitted_line[4]
+                if interfaces.endswith(','):
+                    while interfaces.endswith(','):
+                        # gather all comma separated interfaces
+                        if out_len <= index:
+                            break
+                        index += 1
+                        line = lines[index]
+                        vrf_line = re.split(r'\s{2,}', line.strip())
+                        interfaces += vrf_line[-1]
 
-                for i in splitted_line[4].split(','):
-                    obj['interfaces'].append(i.strip())
-
-            objs.append(obj)
+                for i in interfaces.split(','):
+                    obj['interfaces'].append(i.strip().lower())
+        index += 1
+        objs.append(obj)
 
     return objs
 
@@ -216,13 +234,17 @@ def map_params_to_obj(module):
             for key in item:
                 if item.get(key) is None:
                     item[key] = module.params[key]
+
+            if item.get('interfaces'):
+                item['interfaces'] = [intf.replace(" ", "").lower() for intf in item.get('interfaces') if intf]
+
             obj.append(item.copy())
     else:
         obj.append({
             'name': module.params['name'],
             'state': module.params['state'],
             'rd': module.params['rd'],
-            'interfaces': module.params['interfaces']
+            'interfaces': [intf.replace(" ", "").lower() for intf in module.params['interfaces']] if module.params['interfaces'] else []
         })
 
     return obj
@@ -300,6 +322,7 @@ def main():
         check_declarative_intent_params(want, module)
 
     module.exit_json(**result)
+
 
 if __name__ == '__main__':
     main()

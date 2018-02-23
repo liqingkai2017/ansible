@@ -45,7 +45,8 @@ options:
     required: true
   interfaces:
     description:
-      - List of interfaces that should be associated to the VLAN.
+      - List of interfaces that should be associated to the VLAN. The name of interface
+        should be in expanded format and not abbreviated.
   delay:
     description:
       - Delay the play should wait to check for declarative intent params values.
@@ -61,6 +62,7 @@ options:
       - State of the VLAN configuration.
     default: present
     choices: ['present', 'absent', 'active', 'suspend']
+extends_documentation_fragment: eos
 """
 
 EXAMPLES = """
@@ -197,24 +199,22 @@ def map_obj_to_commands(updates, module):
 
 def map_config_to_obj(module):
     objs = []
-    output = run_commands(module, ['show vlan'])
-    lines = output[0].strip().splitlines()[2:]
+    vlans = run_commands(module, ['show vlan conf | json'])
 
-    for l in lines:
-        splitted_line = re.split(r'\s{2,}', l.strip())
+    for vlan in vlans[0]['vlans']:
         obj = {}
-        obj['vlan_id'] = splitted_line[0]
-        obj['name'] = splitted_line[1]
-        obj['state'] = splitted_line[2]
+        obj['vlan_id'] = vlan
+        obj['name'] = vlans[0]['vlans'][vlan]['name']
+        obj['state'] = vlans[0]['vlans'][vlan]['status']
+        obj['interfaces'] = []
+
+        interfaces = vlans[0]['vlans'][vlan]
+
+        for interface in interfaces['interfaces']:
+            obj['interfaces'].append(interface)
 
         if obj['state'] == 'suspended':
             obj['state'] = 'suspend'
-
-        obj['interfaces'] = []
-        if len(splitted_line) > 3:
-
-            for i in splitted_line[3].split(','):
-                obj['interfaces'].append(i.strip().replace('Et', 'Ethernet'))
 
         objs.append(obj)
 
@@ -230,6 +230,9 @@ def map_params_to_obj(module):
                 if item.get(key) is None:
                     item[key] = module.params[key]
 
+            if item.get('interfaces'):
+                item['interfaces'] = [intf.replace(" ", "").lower() for intf in item.get('interfaces') if intf]
+
             d = item.copy()
             d['vlan_id'] = str(d['vlan_id'])
 
@@ -239,7 +242,7 @@ def map_params_to_obj(module):
             'vlan_id': str(module.params['vlan_id']),
             'name': module.params['name'],
             'state': module.params['state'],
-            'interfaces': module.params['interfaces']
+            'interfaces': [intf.replace(" ", "").lower() for intf in module.params['interfaces']] if module.params['interfaces'] else []
         })
 
     return obj
@@ -317,6 +320,7 @@ def main():
         check_declarative_intent_params(want, module)
 
     module.exit_json(**result)
+
 
 if __name__ == '__main__':
     main()

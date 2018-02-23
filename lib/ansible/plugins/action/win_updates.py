@@ -6,6 +6,7 @@ import json
 from ansible.errors import AnsibleError
 from ansible.module_utils._text import to_text
 from ansible.module_utils.parsing.convert_bool import boolean
+from ansible.parsing.yaml.objects import AnsibleUnicode
 from ansible.plugins.action import ActionBase
 
 try:
@@ -133,12 +134,16 @@ class ActionModule(ActionBase):
         self._supports_async = True
 
         result = super(ActionModule, self).run(tmp, task_vars)
+        del tmp  # tmp no longer has any effect
 
         category_names = self._task.args.get('category_names', [
             'CriticalUpdates',
             'SecurityUpdates',
             'UpdateRollups',
         ])
+        if isinstance(category_names, AnsibleUnicode):
+            category_names = [cat.strip() for cat in category_names.split(",")]
+
         state = self._task.args.get('state', 'installed')
         reboot = self._task.args.get('reboot', False)
         reboot_timeout = self._task.args.get('reboot_timeout',
@@ -183,6 +188,7 @@ class ActionModule(ActionBase):
 
         changed = result['changed']
         updates = result.get('updates', dict())
+        filtered_updates = result.get('filtered_updates', dict())
         found_update_count = result.get('found_update_count', 0)
         installed_update_count = result.get('installed_update_count', 0)
 
@@ -231,7 +237,10 @@ class ActionModule(ActionBase):
                 result = self._run_win_updates(new_module_args, task_vars)
 
                 result_updates = result.get('updates', dict())
+                result_filtered_updates = result.get('filtered_updates', dict())
                 updates = self._merge_dict(updates, result_updates)
+                filtered_updates = self._merge_dict(filtered_updates,
+                                                    result_filtered_updates)
                 found_update_count += result.get('found_update_count', 0)
                 installed_update_count += result.get('installed_update_count', 0)
                 if result['changed']:
@@ -242,6 +251,7 @@ class ActionModule(ActionBase):
         if self._task.async_val == 0:
             result['changed'] = changed
             result['updates'] = updates
+            result['filtered_updates'] = filtered_updates
             result['found_update_count'] = found_update_count
             result['installed_update_count'] = installed_update_count
 

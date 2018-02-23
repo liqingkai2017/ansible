@@ -47,6 +47,7 @@ options:
         be present or absent on remote device.
     default: present
     choices: ['present', 'absent']
+extends_documentation_fragment: ios
 """
 
 EXAMPLES = """
@@ -106,7 +107,7 @@ from ansible.module_utils.network.ios.ios import get_config, load_config
 from ansible.module_utils.network.ios.ios import ios_argument_spec
 from ansible.module_utils.network.common.config import NetworkConfig
 from ansible.module_utils.network.common.utils import conditional, remove_default_spec
-from ansible.module_utils.network.common.utils import is_netmask, is_masklen, to_subnet, to_netmask, to_masklen
+from ansible.module_utils.network.common.utils import is_netmask, is_masklen, to_netmask, to_masklen
 
 
 def validate_ipv4(value, module):
@@ -301,12 +302,7 @@ def main():
 
     if commands:
         if not module.check_mode:
-            response = load_config(module, commands)
-            for item in response:
-                for cmd, rsp in iteritems(item):
-                    for err in ('Error:', 'overlaps with', 'Bad mask'):
-                        if err in rsp:
-                            module.fail_json(msg="command '%s' failed with error '%s'." % (cmd, rsp))
+            load_config(module, commands)
 
         result['changed'] = True
 

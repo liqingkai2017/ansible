@@ -39,6 +39,7 @@ options:
   id:
     description:
      - Numeric, the droplet id you want to operate on.
+    aliases: ['droplet_id']
   name:
     description:
      - String, this is the name of the droplet - must be formatted by hostname rules, or the name of a SSH key.
@@ -231,6 +232,12 @@ class Droplet(JsonfyMixIn):
         if attrs:
             for k, v in attrs.items():
                 setattr(self, k, v)
+            networks = attrs.get('networks', {})
+            for network in networks.get('v6', []):
+                if network['type'] == 'public':
+                    setattr(self, 'public_ipv6_address', network['ip_address'])
+                else:
+                    setattr(self, 'private_ipv6_address', network['ip_address'])
         else:
             json = self.manager.show_droplet(self.id)
             if json['ip_address']:

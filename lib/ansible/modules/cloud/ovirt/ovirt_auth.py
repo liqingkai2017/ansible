@@ -116,7 +116,6 @@ notes:
 '''
 
 EXAMPLES = '''
-tasks:
   - block:
        # Create a vault with `ovirt_password` variable which store your
        # oVirt/RHV user's password, and include that yaml file with variable:
@@ -150,7 +149,6 @@ tasks:
 # in yaml file.
 # This is mainly usefull when using Ansible Tower or AWX, as it will work
 # for Red Hat Virtualization creadentials type.
-tasks:
   - name: Obtain SSO token
     ovirt_auth:
       state: present
@@ -175,7 +173,7 @@ ovirt_auth:
         ca_file:
             description: CA file, which is used to verify SSL/TLS connection.
             returned: success
-            type: string
+            type: path
             sample: "ca.pem"
         insecure:
             description: Flag indicating if insecure connection is used.
@@ -222,7 +220,7 @@ def main():
             username=dict(default=None),
             password=dict(default=None, no_log=True),
             ca_file=dict(default=None, type='path'),
-            insecure=dict(required=False, type='bool', default=False),
+            insecure=dict(required=False, type='bool', default=None),
             timeout=dict(required=False, type='int', default=0),
             compress=dict(required=False, type='bool', default=True),
             kerberos=dict(required=False, type='bool', default=False),
@@ -244,12 +242,20 @@ def main():
     elif state == 'absent':
         params = module.params['ovirt_auth']
 
-    url = params.get('url') or os.environ.get('OVIRT_URL')
-    username = params.get('username') or os.environ.get('OVIRT_USERNAME')
-    password = params.get('password') or os.environ.get('OVIRT_PASSWORD')
-    ca_file = params.get('ca_file') or os.environ.get('OVIRT_CAFILE')
-    insecure = params.get('insecure') or ca_file is None
-    token = params.get('token') or os.environ.get('OVIRT_TOKEN')
+    def get_required_parameter(param, env_var, required=False):
+        var = params.get(param) or os.environ.get(env_var)
+        if not var and required and state == 'present':
+            module.fail_json(msg="'%s' is a required parameter." % param)
+
+        return var
+
+    url = get_required_parameter('url', 'OVIRT_URL', required=True)
+    username = get_required_parameter('username', 'OVIRT_USERNAME', required=True)
+    password = get_required_parameter('password', 'OVIRT_PASSWORD', required=True)
+    token = get_required_parameter('token', 'OVIRT_TOKEN')
+    ca_file = get_required_parameter('ca_file', 'OVIRT_CAFILE')
+    insecure = params.get('insecure') if params.get('insecure') is not None else not bool(ca_file)
+
     connection = sdk.Connection(
         url=url,
         username=username,

@@ -88,6 +88,15 @@ options:
   aggregate:
     description: List of VLANs definitions.
     version_added: "2.5"
+  purge:
+    description:
+      - Purge VLANs not defined in the I(aggregate) parameter.
+    default: no
+  delay:
+    description:
+      - Time in seconds to wait before checking for the operational state on remote
+        device. This wait is applicable for operational state arguments.
+    default: 10
 '''
 
 EXAMPLES = '''
@@ -395,7 +404,7 @@ def parse_interfaces(module, vlan):
     interfaces = vlan.get('vlanshowplist-ifidx')
     if interfaces:
         for i in interfaces.split(','):
-            if '-' in i:
+            if 'eth' in i.lower() and '-' in i:
                 int_range = i.split('-')
                 stop = int((int_range)[1])
                 start = int(int_range[0].split('/')[1])

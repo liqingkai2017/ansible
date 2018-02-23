@@ -201,9 +201,17 @@ The following fields can be used and are all required unless specified otherwise
 :author:
   Name of the module author in the form ``First Last (@GitHubID)``. Use a multi-line list if there is more than one author.
 :deprecated:
-  If this module is deprecated, detail when that happened, and what to use instead, e.g.
-  `Deprecated in 2.3. Use M(whatmoduletouseinstead) instead.`
-  Ensure `CHANGELOG.md` is updated to reflect this.
+  If a module is deprecated it must be:
+
+  * Mentioned in ``CHANGELOG``
+  * Referenced in the ``porting_guide_x.y.rst``
+  * File should be renamed to start with an ``_``
+  * ``ANSIBLE_METADATA`` must contain ``status: ['deprecated']``
+  * Following values must be set:
+
+  :removed_in: A `string`, such as ``"2.9"``, which represents the version of Ansible this module will replaced with docs only module stub.
+  :why: Optional string that used to detail why this has been removed.
+  :alternative: Inform users they should do instead, i.e. ``Use M(whatmoduletouseinstead) instead.``.
 :options:
   One per module argument:
 
@@ -421,6 +429,9 @@ Examples can be found by searching for ``extends_documentation_fragment`` under 
 Testing documentation
 ---------------------
 
+The simplest way to check if your documentation works is to use ``ansible-doc`` to view it. Any parsing errors will be apparent, and details can be obtained by adding ``-vvv``.
+
+If you are going to submit the module for inclusion in the main Ansible repo you should make sure that it renders correctly as HTML.
 Put your completed module file into the ``lib/ansible/modules/$CATEGORY/`` directory and then
 run the command: ``make webdocs``. The new 'modules.html' file will be
 built in the ``docs/docsite/_build/html/$MODULENAME_module.html`` directory.

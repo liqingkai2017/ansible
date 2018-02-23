@@ -27,11 +27,11 @@ options:
   state:
     description:
       - Create or remove cors on the s3 bucket
-    required: false
-    default: present
+    required: true
     choices: [ 'present', 'absent' ]
 extends_documentation_fragment:
     - aws
+    - ec2
 '''
 
 EXAMPLES = '''

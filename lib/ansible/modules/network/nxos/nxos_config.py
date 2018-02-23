@@ -44,9 +44,10 @@ options:
         device config parser.
     required: false
     default: null
+    aliases: ['commands']
   parents:
     description:
-      - The ordered set of parents that uniquely identify the section
+      - The ordered set of parents that uniquely identify the section or hierarchy
         the commands should be checked against.  If the parents argument
         is omitted, the commands are checked against the set of top
         level or global commands.
@@ -112,9 +113,9 @@ options:
         the modified lines are pushed to the device in configuration
         mode.  If the replace argument is set to I(block) then the entire
         command block is pushed to the device in configuration mode if any
-        line is not correct. I(replace config) is supported on Nexus 9K device.
+        line is not correct. I(replace config) is supported only on Nexus 9K device.
     required: false
-    default: lineo
+    default: line
     choices: ['line', 'block', 'config']
   force:
     description:
@@ -287,9 +288,9 @@ backup_path:
   sample: /playbooks/ansible/backup/nxos_config.2016-07-16@22:28:34
 """
 
-import os
 
 from ansible.module_utils.basic import AnsibleModule
+from ansible.module_utils.connection import ConnectionError
 from ansible.module_utils.network.common.config import NetworkConfig, dumps
 from ansible.module_utils.network.nxos.nxos import get_config, load_config, run_commands
 from ansible.module_utils.network.nxos.nxos import get_capabilities
@@ -390,12 +391,18 @@ def main():
 
     config = None
 
-    info = get_capabilities(module).get('device_info', {})
-    os_platform = info.get('network_os_platform', '')
+    try:
+        info = get_capabilities(module)
+        api = info.get('network_api', 'nxapi')
+        device_info = info.get('device_info', {})
+        os_platform = device_info.get('network_os_platform', '')
+    except ConnectionError:
+        api = ''
+        os_platform = ''
 
-    if module.params['replace'] == 'config':
+    if api == 'cliconf' and module.params['replace'] == 'config':
         if '9K' not in os_platform:
-            module.fail_json(msg='replace: config is supported only for Nexus 9K series switches')
+            module.fail_json(msg='replace: config is supported only on Nexus 9K series switches')
 
     if module.params['replace_src']:
         if module.params['replace'] != 'config':
@@ -493,9 +500,16 @@ def main():
             base_config = NetworkConfig(indent=1, contents=contents, ignore_lines=diff_ignore_lines)
 
             if running_config.sha1 != base_config.sha1:
+                if module.params['diff_against'] == 'intended':
+                    before = running_config
+                    after = base_config
+                elif module.params['diff_against'] in ('startup', 'running'):
+                    before = base_config
+                    after = running_config
+
                 result.update({
                     'changed': True,
-                    'diff': {'before': str(base_config), 'after': str(running_config)}
+                    'diff': {'before': str(before), 'after': str(after)}
                 })
 
     module.exit_json(**result)

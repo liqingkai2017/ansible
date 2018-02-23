@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
-# Copyright 2017 Dag Wieers <dag@wieers.com>
-# Copyright 2017 Swetha Chunduri (@schunduri)
+# Copyright: (c) 2017, Dag Wieers (@dagwieers) <dag@wieers.com>
+# Copyright: (c) 2017, Swetha Chunduri (@schunduri)
 
 # This file is part of Ansible by Red Hat
 #
@@ -23,11 +23,16 @@ class ModuleDocFragment(object):
     # Standard files documentation fragment
     DOCUMENTATION = '''
 options:
-  hostname:
+  host:
     description:
     - IP Address or hostname of APIC resolvable by Ansible control host.
     required: yes
-    aliases: [ host ]
+    aliases: [ hostname ]
+  port:
+    description:
+    - Port number to be used for REST connection.
+    default: 443 (for https) and 80 (for http)
+    type: int
   username:
     description:
     - The username to use for authentication.
@@ -40,15 +45,23 @@ options:
     required: yes
   private_key:
     description:
-    - PEM formatted file that contains your private key to be used for client certificate authentication.
+    - PEM formatted file that contains your private key to be used for signature-based authentication.
     - The name of the key (without extension) is used as the certificate name in ACI, unless C(certificate_name) is specified.
     aliases: [ cert_key ]
   certificate_name:
     description:
-    - The X.509 certificate name attached to the APIC AAA user.
+    - The X.509 certificate name attached to the APIC AAA user used for signature-based authentication.
     - It defaults to the C(private_key) basename, without extension.
     aliases: [ cert_name ]
     default: C(private_key) basename
+  output_level:
+    description:
+    - Influence the output of this ACI module.
+    - C(normal) means the standard output, incl. C(current) dict
+    - C(info) means informational output, incl. C(previous), C(proposed) and C(sent) dicts
+    - C(debug) means debugging output, incl. C(filter_string), C(method), C(response), C(status) and C(url) information
+    choices: [ debug, info, normal ]
+    default: normal
   timeout:
     description:
     - The socket level timeout in seconds.
@@ -56,8 +69,8 @@ options:
   use_proxy:
     description:
       - If C(no), it will not use a proxy, even if one is defined in an environment variable on the target hosts.
-    default: 'yes'
     type: bool
+    default: 'yes'
   use_ssl:
     description:
     - If C(no), an HTTP connection will be used instead of the default HTTPS connection.
@@ -70,12 +83,6 @@ options:
     type: bool
     default: 'yes'
 notes:
-- By default, if an environment variable C(<protocol>_proxy) is set on
-  the target host, requests will be sent through that proxy. This
-  behaviour can be overridden by setting a variable for this task
-  (see `setting the environment
-  <http://docs.ansible.com/playbooks_environment.html>`_),
-  or by using the C(use_proxy) option.
-- HTTP redirects can redirect from HTTP to HTTPS so you should be sure that
-  your proxy environment for both protocols is correct.
+- Please read :ref:`the ACI guide <aci_guide>` for more detailed information
+  on how to manage your ACI infrastructure using Ansible.
 '''

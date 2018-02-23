@@ -107,15 +107,6 @@
 
     - block:
       - include_role:
-          name: nxos_mtu
-        when: "limit_to in ['*', 'nxos_mtu']"
-      rescue:
-        - set_fact:
-            failed_modules: "{{ failed_modules }} + [ 'nxos_mtu' ]"
-            test_failed: true
-
-    - block:
-      - include_role:
           name: nxos_system
         when: "limit_to in ['*', 'nxos_system']"
       rescue:
@@ -516,6 +507,15 @@
       rescue:
         - set_fact:
             failed_modules: "{{ failed_modules }} + [ 'nxos_overlay_global' ]"
+            test_failed: true
+
+    - block:
+      - include_role:
+          name: nxos_pim
+        when: "limit_to in ['*', 'nxos_pim']"
+      rescue:
+        - set_fact:
+            failed_modules: "{{ failed_modules }} + [ 'nxos_pim' ]"
             test_failed: true
 
     - block:
